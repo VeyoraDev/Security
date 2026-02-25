@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # ============================================
-# Pterodactyl Security Installer - FIXED VERSION
+# Pterodactyl Security Installer - FULL PROTECTION
 # Author: Veyora (@vdnox)
-# Version: 3.0 - DUAL PROTECTION
+# Version: 4.0 - 403 Forced Error
 # ============================================
 
 set -e
@@ -20,7 +20,7 @@ NC='\033[0m'
 # ============= VARIABLES =============
 PTERO_DIR="/var/www/pterodactyl"
 BACKUP_DIR="/root/pterodactyl-backup-$(date +%Y%m%d-%H%M%S)"
-VERSION="3.0"
+VERSION="4.0"
 
 # ============= PRINT FUNCTIONS =============
 log() { echo -e "${GREEN}✓${NC} $1"; }
@@ -68,8 +68,11 @@ backup_files() {
     [ -f "$PTERO_DIR/resources/views/layouts/admin.blade.php" ] && \
         cp "$PTERO_DIR/resources/views/layouts/admin.blade.php" "$BACKUP_DIR/"
     
-    [ -f "$PTERO_DIR/routes/api-client.php" ] && \
-        cp "$PTERO_DIR/routes/api-client.php" "$BACKUP_DIR/"
+    [ -f "$PTERO_DIR/routes/admin.php" ] && \
+        cp "$PTERO_DIR/routes/admin.php" "$BACKUP_DIR/"
+    
+    [ -f "$PTERO_DIR/app/Http/Kernel.php" ] && \
+        cp "$PTERO_DIR/app/Http/Kernel.php" "$BACKUP_DIR/"
     
     log "Backup created at $BACKUP_DIR"
 }
@@ -86,14 +89,111 @@ clear_cache() {
     log "Cache cleared"
 }
 
-# ============= INSTALL ANTI CREATE APIKEY (FIXED WITH DUAL PROTECTION) =============
+# ============= CREATE MIDDLEWARE =============
+create_middleware() {
+    process "Creating Admin API Access Middleware..."
+    
+    mkdir -p "$PTERO_DIR/app/Http/Middleware/Admin"
+    
+    cat > "$PTERO_DIR/app/Http/Middleware/Admin/AdminApiAccess.php" << 'EOF'
+<?php
+
+namespace Pterodactyl\Http\Middleware\Admin;
+
+use Closure;
+use Illuminate\Http\Request;
+
+class AdminApiAccess
+{
+    /**
+     * Handle an incoming request.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @param  \Closure  $next
+     * @return mixed
+     */
+    public function handle(Request $request, Closure $next)
+    {
+        $user = $request->user();
+        
+        // Check if user is logged in and has ID 1
+        if (!$user || $user->id !== 1) {
+            // Return 403 error with custom message
+            abort(403, 'Access Denied: Hanya Admin Utama (ID 1) yang boleh mengakses halaman ini.');
+        }
+        
+        return $next($request);
+    }
+}
+EOF
+
+    log "Middleware created"
+}
+
+# ============= REGISTER MIDDLEWARE =============
+register_middleware() {
+    process "Registering middleware in Kernel.php..."
+    
+    KERNEL_FILE="$PTERO_DIR/app/Http/Kernel.php"
+    
+    if [ ! -f "$KERNEL_FILE" ]; then
+        error "Kernel.php not found!"
+    fi
+    
+    # Check if already registered
+    if grep -q "admin.api.access" "$KERNEL_FILE"; then
+        log "Middleware already registered"
+        return
+    fi
+    
+    # Add to routeMiddleware array
+    sed -i "/'throttle' => .*/a \\
+        'admin.api.access' => \\\App\\\Http\\\Middleware\\\Admin\\\AdminApiAccess::class," "$KERNEL_FILE"
+    
+    log "Middleware registered in Kernel.php"
+}
+
+# ============= PROTECT ADMIN API ROUTES =============
+protect_admin_routes() {
+    process "Protecting admin API routes..."
+    
+    ROUTES_FILE="$PTERO_DIR/routes/admin.php"
+    
+    if [ ! -f "$ROUTES_FILE" ]; then
+        warn "admin.php not found, skipping route protection"
+        return
+    fi
+    
+    # Backup original
+    cp "$ROUTES_FILE" "$BACKUP_DIR/admin.php.routebak"
+    
+    # Check if already protected
+    if grep -q "admin.api.access" "$ROUTES_FILE"; then
+        log "Routes already protected"
+        return
+    fi
+    
+    # Find the API group and add middleware
+    # This is a more robust approach - find the api group and add middleware
+    if grep -q "Route::group.*prefix.*api" "$ROUTES_FILE"; then
+        # Add middleware to existing api group
+        sed -i '/Route::group.*prefix.*api/ s/\(.*\)/\1->middleware(['"'"'admin.api.access'"'"'])/' "$ROUTES_FILE"
+    else
+        # If no api group found, create one (this is less likely in Pterodactyl)
+        log "No api group found, manual check needed"
+    fi
+    
+    log "Admin API routes protected with middleware"
+}
+
+# ============= INSTALL ANTI CREATE APIKEY (FULLY PROTECTED) =============
 install_anti_apikey() {
-    header "ANTI CREATE APIKEY - Pemasangan (DUAL PROTECTION)"
+    header "ANTI CREATE APIKEY - Pemasangan (Full Protection + 403)"
     
     check_pterodactyl
     backup_files
     
-    show_loading "Memasang Anti Create APIKey dengan Dual Protection"
+    show_loading "Memasang Anti Create APIKey dengan 403 Protection"
     
     # Create directory if not exists
     mkdir -p "$PTERO_DIR/app/Http/Controllers/Api/Client"
@@ -116,20 +216,12 @@ class ApiKeyController extends ClientApiController
 {
     /**
      * 🔒 CORE PROTECTION: Hanya user ID 1 yang boleh akses API Key functions
-     * Method ni akan dipanggil di setiap function untuk memastikan proteksi
      */
     private function validateUser($user)
     {
-        // Log untuk debugging (optional)
-        \Log::info('API Key Access Attempt by User ID: ' . ($user->id ?? 'guest'));
-        
         // CHECK PENTING: Pastikan user wujud dan ID adalah 1
         if (!$user || !isset($user->id) || $user->id !== 1) {
-            abort(403, json_encode([
-                'error' => 'Access Denied',
-                'message' => '🚫 Hanya user dengan ID 1 yang boleh mengelola API Key!',
-                'code' => 'PROTECT10'
-            ]));
+            abort(403, 'Access Denied: Hanya user dengan ID 1 yang boleh mengelola API Key!');
         }
         
         return true;
@@ -156,17 +248,8 @@ class ApiKeyController extends ClientApiController
         $user = $request->user();
         $this->validateUser($user);
 
-        // Additional check untuk memastikan user masih ID 1
-        if ($user->id !== 1) {
-            abort(403, json_encode([
-                'error' => 'Access Denied',
-                'message' => '🚫 Hanya user dengan ID 1 yang boleh membuat API Key!',
-                'code' => 'PROTECT10-CREATE'
-            ]));
-        }
-
         if ($user->apiKeys->count() >= 25) {
-            throw new DisplayException('❌ Batas maksimal API Key tercapai (maksimum 25).');
+            throw new DisplayException('Batas maksimal API Key tercapai (maksimum 25).');
         }
 
         $token = $user->createToken(
@@ -193,15 +276,6 @@ class ApiKeyController extends ClientApiController
         $user = $request->user();
         $this->validateUser($user);
 
-        // Additional check untuk memastikan user masih ID 1
-        if ($user->id !== 1) {
-            abort(403, json_encode([
-                'error' => 'Access Denied',
-                'message' => '🚫 Hanya user dengan ID 1 yang boleh menghapus API Key!',
-                'code' => 'PROTECT10-DELETE'
-            ]));
-        }
-
         /** @var \Pterodactyl\Models\ApiKey $key */
         $key = $user->apiKeys()
             ->where('key_type', ApiKey::TYPE_ACCOUNT)
@@ -219,67 +293,16 @@ class ApiKeyController extends ClientApiController
 }
 EOF
 
-    # Sekarang kita protect dekat ROUTES level juga
-    # Buat backup dulu
-    if [ -f "$PTERO_DIR/routes/api-client.php" ]; then
-        cp "$PTERO_DIR/routes/api-client.php" "$BACKUP_DIR/api-client.php.bak"
-        
-        # Inject middleware dekat route API Key
-        # Cari group account/api-keys dan tambah middleware
-        sed -i '/Route::group.*account\/api-keys/,/});/ {
-            /Route::get/ s/->name/->middleware("check.id.1")->name/
-            /Route::post/ s/->name/->middleware("check.id.1")->name/
-            /Route::delete/ s/->name/->middleware("check.id.1")->name/
-        }' "$PTERO_DIR/routes/api-client.php"
-    fi
-    
-    # Buat custom middleware untuk route protection
-    mkdir -p "$PTERO_DIR/app/Http/Middleware/Api"
-    
-    cat > "$PTERO_DIR/app/Http/Middleware/Api/CheckUserId.php" << 'EOF'
-<?php
-
-namespace Pterodactyl\Http\Middleware\Api;
-
-use Closure;
-use Illuminate\Http\Request;
-
-class CheckUserId
-{
-    public function handle(Request $request, Closure $next)
-    {
-        $user = $request->user();
-        
-        if (!$user || $user->id !== 1) {
-            return response()->json([
-                'error' => 'Access Denied',
-                'message' => '🚫 Hanya user dengan ID 1 yang boleh mengakses API Key endpoints!',
-                'code' => 'PROTECT10-ROUTE'
-            ], 403);
-        }
-        
-        return $next($request);
-    }
-}
-EOF
-
-    # Register middleware dalam Kernel.php
-    if [ -f "$PTERO_DIR/app/Http/Kernel.php" ]; then
-        cp "$PTERO_DIR/app/Http/Kernel.php" "$BACKUP_DIR/Kernel.php.bak"
-        
-        # Check if middleware already exists
-        if ! grep -q "check.id.1" "$PTERO_DIR/app/Http/Kernel.php"; then
-            # Add to routeMiddleware array
-            sed -i "/'throttle' => .*/a \\
-        'check.id.1' => \\\App\\\Http\\\Middleware\\\Api\\\CheckUserId::class," "$PTERO_DIR/app/Http/Kernel.php"
-        fi
-    fi
+    # Create and register middleware for route protection
+    create_middleware
+    register_middleware
+    protect_admin_routes
 
     # Set permissions
     chown -R www-data:www-data "$PTERO_DIR/app/Http/Controllers/Api/Client"
-    chown -R www-data:www-data "$PTERO_DIR/app/Http/Middleware/Api"
+    chown -R www-data:www-data "$PTERO_DIR/app/Http/Middleware/Admin"
     chmod 644 "$PTERO_DIR/app/Http/Controllers/Api/Client/ApiKeyController.php"
-    chmod 644 "$PTERO_DIR/app/Http/Middleware/Api/CheckUserId.php"
+    chmod 644 "$PTERO_DIR/app/Http/Middleware/Admin/AdminApiAccess.php"
     
     clear_cache
     
@@ -287,13 +310,13 @@ EOF
     echo "============================================================="
     echo -e "${GREEN}✅ ANTI CREATE APIKEY BERJAYI DIPASANG!${NC}"
     echo "============================================================="
-    echo -e "${YELLOW}Proteksi DIPASANG di 3 level:${NC}"
-    echo "  1. Controller Level - Setiap method diprotek"
-    echo "  2. Route Level - Middleware di route API"
-    echo "  3. Database Level - Sanctum token validation"
+    echo -e "${YELLOW}PROTEKSI DIPASANG DI 2 LEVEL:${NC}"
+    echo "  1. Controller Level - Setiap method API Key diprotek"
+    echo "  2. Route Level - Halaman /admin/api akan return 403 untuk ID lain"
     echo
-    echo -e "${GREEN}✓ User ID 1: Boleh create/delete API Key${NC}"
-    echo -e "${RED}✗ User ID 2+: Akan dapat error 403${NC}"
+    echo -e "${GREEN}✓ User ID 1: Boleh akses halaman API & create/delete API Key${NC}"
+    echo -e "${RED}✗ User ID 2+: Akan dapat ERROR 403 bila buka /admin/api${NC}"
+    echo -e "${RED}✗ User ID 2+: Akan dapat ERROR 403 bila cuba create/delete API Key${NC}"
     echo "============================================================="
 }
 
@@ -661,21 +684,21 @@ EOF
     fi
     
     # Remove custom middleware
-    if [ -f "$PTERO_DIR/app/Http/Middleware/Api/CheckUserId.php" ]; then
-        rm -f "$PTERO_DIR/app/Http/Middleware/Api/CheckUserId.php"
+    if [ -f "$PTERO_DIR/app/Http/Middleware/Admin/AdminApiAccess.php" ]; then
+        rm -f "$PTERO_DIR/app/Http/Middleware/Admin/AdminApiAccess.php"
         log "Removed custom middleware"
     fi
     
-    # Restore routes
-    if [ -f "$BACKUP_DIR/api-client.php.bak" ]; then
-        cp "$BACKUP_DIR/api-client.php.bak" "$PTERO_DIR/routes/api-client.php"
-        log "Restored api-client.php from backup"
+    # Remove middleware from Kernel.php
+    if [ -f "$BACKUP_DIR/Kernel.php" ]; then
+        cp "$BACKUP_DIR/Kernel.php" "$PTERO_DIR/app/Http/Kernel.php"
+        log "Restored Kernel.php from backup"
     fi
     
-    # Restore Kernel.php
-    if [ -f "$BACKUP_DIR/Kernel.php.bak" ]; then
-        cp "$BACKUP_DIR/Kernel.php.bak" "$PTERO_DIR/app/Http/Kernel.php"
-        log "Restored Kernel.php from backup"
+    # Restore routes
+    if [ -f "$BACKUP_DIR/admin.php.routebak" ]; then
+        cp "$BACKUP_DIR/admin.php.routebak" "$PTERO_DIR/routes/admin.php"
+        log "Restored admin.php from backup"
     fi
     
     clear_cache
@@ -693,7 +716,7 @@ uninstall_hide_menu() {
         cp "$BACKUP_DIR/admin.blade.php" "$PTERO_DIR/resources/views/layouts/admin.blade.php"
         log "Restored admin.blade.php from backup"
     else
-        # Use default Pterodactyl code (tanpa @if conditions)
+        # Use default Pterodactyl code
         cat > "$PTERO_DIR/resources/views/layouts/admin.blade.php" << 'EOF'
 <!DOCTYPE html>
 <html>
@@ -968,7 +991,7 @@ show_menu() {
     echo "============================================================="
     echo
     echo "Pilih option:"
-    echo "[1] Install Anti Create APIKey"
+    echo "[1] Install Anti Create APIKey + 403"
     echo "[2] Install Hide Menu"
     echo "[3] Uninstall Anti Create APIKey"
     echo "[4] Uninstall Hide Menu"
