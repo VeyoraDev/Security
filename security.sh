@@ -597,3 +597,48 @@ show_menu() {
     echo "[5] Exit"
     echo
     read -p "Select [1-5]: " choice
+    
+    case $choice in
+        1) 
+            install_anti_apikey
+            echo
+            read -p "Press Enter to return to menu..."
+            show_menu
+            ;;
+        2)
+            install_hide_menu
+            echo
+            read -p "Press Enter to return to menu..."
+            show_menu
+            ;;
+        3)
+            uninstall_anti_apikey
+            echo
+            read -p "Press Enter to return to menu..."
+            show_menu
+            ;;
+        4)
+            uninstall_hide_menu
+            echo
+            read -p "Press Enter to return to menu..."
+            show_menu
+            ;;
+        5)
+            exit 0
+            ;;
+        *)
+            warn "Pilihan tak valid! Sila pilih 1-5"
+            sleep 2
+            show_menu
+            ;;
+    esac
+}
+
+# ============= START SCRIPT =============
+# Check if running as root
+if [[ $EUID -ne 0 ]]; then
+    error "Script ini mesti run sebagai root! Guna: sudo bash security.sh"
+fi
+
+# Start menu
+show_menu
