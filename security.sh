@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # ============================================
-# Pterodactyl Security Installer - WITH DEFACE
+# Pterodactyl Security Installer - PTLA PROTECT
 # Author: Veyora (@vdnox)
-# Version: 11.0 - Deface Application API
+# Version: 12.0 - Application API Protection
 # ============================================
 
 set -e
@@ -20,7 +20,7 @@ NC='\033[0m'
 # ============= VARIABLES =============
 PTERO_DIR="/var/www/pterodactyl"
 BACKUP_DIR="/root/pterodactyl-backup-$(date +%Y%m%d-%H%M%S)"
-VERSION="11.0"
+VERSION="12.0"
 
 # ============= PRINT FUNCTIONS =============
 log() { echo -e "${GREEN}✓${NC} $1"; }
@@ -61,15 +61,21 @@ backup_files() {
     process "Creating backup at $BACKUP_DIR..."
     mkdir -p "$BACKUP_DIR"
     
-    # Backup files yang akan diubah
-    [ -f "$PTERO_DIR/resources/views/layouts/admin.blade.php" ] && \
-        cp "$PTERO_DIR/resources/views/layouts/admin.blade.php" "$BACKUP_DIR/"
-    
+    # Backup PTLA files
     [ -f "$PTERO_DIR/app/Http/Controllers/Api/Application/ApiController.php" ] && \
         cp "$PTERO_DIR/app/Http/Controllers/Api/Application/ApiController.php" "$BACKUP_DIR/"
     
+    [ -f "$PTERO_DIR/routes/api-application.php" ] && \
+        cp "$PTERO_DIR/routes/api-application.php" "$BACKUP_DIR/"
+    
+    [ -f "$PTERO_DIR/app/Http/Kernel.php" ] && \
+        cp "$PTERO_DIR/app/Http/Kernel.php" "$BACKUP_DIR/"
+    
+    # Backup PTLC files (just in case)
+    [ -f "$PTERO_DIR/app/Http/Controllers/Api/Client/ApiKeyController.php" ] && \
+        cp "$PTERO_DIR/app/Http/Controllers/Api/Client/ApiKeyController.php" "$BACKUP_DIR/"
+    
     log "Backup created at $BACKUP_DIR"
-    info "Backup location: $BACKUP_DIR"
 }
 
 # ============= CLEAR CACHE =============
@@ -83,440 +89,172 @@ clear_cache() {
     log "Cache cleared"
 }
 
-# ============= INSTALL DEFACE APPLICATION API =============
-install_deface_api() {
-    header="🚫 DEFACE APPLICATION API - Pemasangan"
+# ============= INSTALL PROTECT APPLICATION API (PTLA) =============
+install_protect_ptla() {
+    header "🔒 PROTECT APPLICATION API (PTLA)"
     
     check_pterodactyl
     backup_files
     
-    show_loading "Memasang Deface untuk Application API"
+    show_loading "Memasang Protection untuk Application API"
     
-    # Create directory if not exists
-    mkdir -p "$PTERO_DIR/app/Http/Controllers/Api/Application"
+    # ===== 1. CREATE MIDDLEWARE =====
+    process "Creating PTLA Protection Middleware..."
     
-    # Write the controller with deface
-    cat > "$PTERO_DIR/app/Http/Controllers/Api/Application/ApiController.php" << 'EOF'
+    mkdir -p "$PTERO_DIR/app/Http/Middleware/PTLA"
+    
+    cat > "$PTERO_DIR/app/Http/Middleware/PTLA/ProtectPTLA.php" << 'EOF'
 <?php
 
-namespace Pterodactyl\Http\Controllers\Api\Application;
+namespace Pterodactyl\Http\Middleware\PTLA;
 
+use Closure;
 use Illuminate\Http\Request;
-use Pterodactyl\Http\Controllers\Api\Application\ApplicationApiController;
 
-class ApiController extends ApplicationApiController
+class ProtectPTLA
 {
-    /**
-     * Display a listing of the API credentials.
-     */
-    public function index(Request $request)
+    public function handle(Request $request, Closure $next)
     {
         $user = $request->user();
         
-        // Kalau user ID 1, bagi view normal
+        // Log attempt for debugging
+        error_log("PTLA Access Attempt - User ID: " . ($user->id ?? 'guest') . " - Path: " . $request->path());
+        
+        // Kalau user ID 1, bagi lalu
         if ($user && $user->id == 1) {
-            return view('admin.api.index');
+            return $next($request);
         }
         
-        // Kalau bukan ID 1, bagi page deface
-        return $this->defacePage();
-    }
-    
-    /**
-     * Show the form for creating new API credentials.
-     */
-    public function create(Request $request)
-    {
-        $user = $request->user();
+        // Kalau bukan ID 1, bagi error "Target Class" macam gambar
+        $error = "Target class [custom.security] does not exist.\n\n";
+        $error .= "## Exception Details\n";
+        $error .= "ReflectionException\n";
+        $error .= "BindingResolutionException\n\n";
+        $error .= "HTTP 500 Internal Server Error\n\n";
+        $error .= "---\n\n";
+        $error .= "## Stack Trace\n\n";
+        $error .= "Illuminate\Contracts\Container\BindingResolutionException\n";
+        $error .= "in /var/www/pterodactyl/vendor/laravel/framework/src/Illuminate/Container/Container.php (line 914)\n";
+        $error .= "in /var/www/pterodactyl/vendor/laravel/framework/src/Illuminate/Container/Container.php -> build (line 795)\n";
+        $error .= "in /var/www/pterodactyl/vendor/laravel/framework/src/Illuminate/Foundation/Application.php -> resolve (line 963)\n";
+        $error .= "in /var/www/pterodactyl/vendor/laravel/framework/src/Illuminate/Container/Container.php -> resolve (line 731)\n";
+        $error .= "in /var/www/pterodactyl/vendor/laravel/framework/src/Illuminate/Foundation/Application.php -> make (line 948)\n";
+        $error .= "in /var/www/pterodactyl/vendor/laravel/framework/src/Illuminate/Pipeline/Pipeline.php -> make (line 172)\n";
+        $error .= "Pipeline->Illuminate\Pipelines\Closure()\n";
+        $error .= "in /var/www/pterodactyl/app/Http/Middleware/AdminAuth/middleware.php (line 211)\n";
         
-        // Kalau user ID 1, bagi view normal
-        if ($user && $user->id == 1) {
-            return view('admin.api.create');
-        }
-        
-        // Kalau bukan ID 1, bagi page deface
-        return $this->defacePage();
-    }
-    
-    /**
-     * Show the form for editing API credentials.
-     */
-    public function edit(Request $request, $id)
-    {
-        $user = $request->user();
-        
-        // Kalau user ID 1, bagi view normal
-        if ($user && $user->id == 1) {
-            return view('admin.api.edit');
-        }
-        
-        // Kalau bukan ID 1, bagi page deface
-        return $this->defacePage();
-    }
-    
-    /**
-     * Display deface page for unauthorized users
-     */
-    private function defacePage()
-    {
-        $html = '
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🔒 ACCESS DENIED - Veyora Security</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            margin: 0;
-            padding: 20px;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        body::before {
-            content: "";
-            position: absolute;
-            top: -50%;
-            left: -50%;
-            width: 200%;
-            height: 200%;
-            background: repeating-linear-gradient(
-                45deg,
-                transparent,
-                transparent 10px,
-                rgba(255, 255, 255, 0.03) 10px,
-                rgba(255, 255, 255, 0.03) 20px
-            );
-            animation: moveBg 20s linear infinite;
-        }
-        
-        @keyframes moveBg {
-            0% { transform: translate(0, 0) rotate(0deg); }
-            100% { transform: translate(10%, 10%) rotate(5deg); }
-        }
-        
-        .container {
-            max-width: 700px;
-            width: 100%;
-            position: relative;
-            z-index: 1;
-        }
-        
-        .card {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 30px;
-            padding: 50px;
-            box-shadow: 0 30px 70px rgba(0, 0, 0, 0.5);
-            text-align: center;
-            position: relative;
-            overflow: hidden;
-            border: 2px solid rgba(255, 255, 255, 0.2);
-            transform-style: preserve-3d;
-            animation: cardFloat 3s ease-in-out infinite;
-        }
-        
-        @keyframes cardFloat {
-            0%, 100% { transform: translateY(0) rotateX(0deg); }
-            50% { transform: translateY(-10px) rotateX(2deg); }
-        }
-        
-        .card::before {
-            content: "";
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 8px;
-            background: linear-gradient(90deg, #ff6b6b, #feca57, #48dbfb, #ff9ff3, #f368e0);
-            background-size: 300% 100%;
-            animation: gradientMove 3s ease infinite;
-        }
-        
-        @keyframes gradientMove {
-            0% { background-position: 0% 50%; }
-            50% { background-position: 100% 50%; }
-            100% { background-position: 0% 50%; }
-        }
-        
-        .icon {
-            font-size: 100px;
-            margin-bottom: 20px;
-            animation: glitch 1s infinite;
-            display: inline-block;
-        }
-        
-        @keyframes glitch {
-            0%, 100% { transform: skew(0deg, 0deg); opacity: 1; }
-            25% { transform: skew(10deg, 5deg) scale(1.1); opacity: 0.9; }
-            50% { transform: skew(-10deg, -5deg) scale(0.9); opacity: 0.8; }
-            75% { transform: skew(5deg, -5deg) scale(1.05); opacity: 0.9; }
-        }
-        
-        h1 {
-            color: #1a1a2e;
-            font-size: 48px;
-            margin-bottom: 15px;
-            font-weight: 900;
-            text-transform: uppercase;
-            letter-spacing: 3px;
-            text-shadow: 3px 3px 0 rgba(255, 107, 107, 0.3);
-        }
-        
-        .glitch-text {
-            position: relative;
-            display: inline-block;
-        }
-        
-        .glitch-text::before,
-        .glitch-text::after {
-            content: "ACCESS DENIED";
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            opacity: 0.8;
-        }
-        
-        .glitch-text::before {
-            color: #ff6b6b;
-            z-index: -1;
-            transform: translate(2px, 2px);
-            animation: glitchText 3s infinite;
-        }
-        
-        .glitch-text::after {
-            color: #4a90e2;
-            z-index: -2;
-            transform: translate(-2px, -2px);
-            animation: glitchText 2.5s infinite reverse;
-        }
-        
-        @keyframes glitchText {
-            0%, 100% { transform: translate(0, 0); opacity: 0; }
-            10% { transform: translate(3px, 2px); opacity: 0.5; }
-            20% { transform: translate(-3px, -2px); opacity: 0.5; }
-            30% { transform: translate(2px, -2px); opacity: 0; }
-        }
-        
-        .message {
-            color: #4a4a6a;
-            font-size: 20px;
-            margin-bottom: 30px;
-            line-height: 1.6;
-            font-weight: 500;
-        }
-        
-        .error-box {
-            background: #1a1a2e;
-            padding: 25px;
-            border-radius: 15px;
-            margin-bottom: 30px;
-            border: 2px solid #ff6b6b;
-            text-align: left;
-            box-shadow: inset 0 0 20px rgba(255, 107, 107, 0.3);
-        }
-        
-        .error-box pre {
-            margin: 0;
-            color: #00ff00;
-            font-family: "Courier New", monospace;
-            font-size: 13px;
-            line-height: 1.5;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            text-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
-        }
-        
-        .status-badge {
-            display: inline-block;
-            background: linear-gradient(135deg, #ff6b6b 0%, #feca57 100%);
-            color: white;
-            padding: 12px 35px;
-            border-radius: 50px;
-            font-weight: bold;
-            font-size: 18px;
-            margin-bottom: 25px;
-            box-shadow: 0 5px 15px rgba(255, 107, 107, 0.4);
-            text-transform: uppercase;
-            letter-spacing: 2px;
-        }
-        
-        .warning {
-            background: rgba(255, 193, 7, 0.1);
-            border-left: 5px solid #ffc107;
-            padding: 20px;
-            border-radius: 10px;
-            margin: 25px 0;
-            text-align: left;
-        }
-        
-        .warning p {
-            color: #856404;
-            font-size: 16px;
-            margin: 5px 0;
-        }
-        
-        .warning strong {
-            color: #533f03;
-        }
-        
-        .footer {
-            margin-top: 30px;
-            padding-top: 20px;
-            border-top: 2px dashed rgba(0, 0, 0, 0.1);
-            color: #6c757d;
-            font-size: 14px;
-        }
-        
-        .signature {
-            color: #ff6b6b;
-            font-weight: bold;
-            font-size: 18px;
-            margin-top: 20px;
-            text-transform: uppercase;
-            letter-spacing: 3px;
-        }
-        
-        .blink {
-            animation: blink 1s step-end infinite;
-        }
-        
-        @keyframes blink {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0; }
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="card">
-            <div class="icon">🔒</div>
-            <h1 class="glitch-text">ACCESS DENIED</h1>
-            <div class="status-badge">HTTP 403 FORBIDDEN</div>
-            
-            <div class="message">
-                ⚠️ Hanya Admin Utama (ID 1) yang boleh mengakses halaman ini ⚠️
-            </div>
-            
-            <div class="error-box">
-                <pre>
-Target class [custom.security] does not exist.
-
-## Exception Details
-ReflectionException  
-BindingResolutionException  
-
-HTTP 500 Internal Server Error  
-
----
-
-## Stack Trace
-
-Illuminate\Contracts\Container\BindingResolutionException  
-in /var/www/pterodactyl/vendor/laravel/framework/src/Illuminate/Container/Container.php (line 914)  
-
-in /var/www/pterodactyl/vendor/laravel/framework/src/Illuminate/Container/Container.php -> build (line 795)  
-
-in /var/www/pterodactyl/vendor/laravel/framework/src/Illuminate/Foundation/Application.php -> resolve (line 963)  
-
-in /var/www/pterodactyl/vendor/laravel/framework/src/Illuminate/Container/Container.php -> resolve (line 731)  
-
-in /var/www/pterodactyl/vendor/laravel/framework/src/Illuminate/Foundation/Application.php -> make (line 948)  
-
-in /var/www/pterodactyl/vendor/laravel/framework/src/Illuminate/Pipeline/Pipeline.php -> make (line 172)  
-
-Pipeline->Illuminate\Pipelines\Closure()  
-in /var/www/pterodactyl/app/Http/Middleware/AdminAuth/middleware.php (line 211)
-                </pre>
-            </div>
-            
-            <div class="warning">
-                <p><strong>⚠️ PERHATIAN ⚠️</strong></p>
-                <p>• Halaman ini hanya boleh diakses oleh user dengan ID = 1</p>
-                <p>• Anda telah dikenalpasti sebagai user ID: <span class="blink">' . ($user->id ?? 'Unknown') . '</span></p>
-                <p>• Akses anda telah direkodkan dalam sistem log</p>
-            </div>
-            
-            <div class="footer">
-                <p>🔐 Veyora Security System - Panel Protection</p>
-                <p>© 2024 - All Rights Reserved</p>
-            </div>
-            
-            <div class="signature">
-                # Veyora @vdnox
-            </div>
-        </div>
-    </div>
-</body>
-</html>
-';
-        
-        return response($html, 403)
-            ->header('Content-Type', 'text/html')
-            ->header('X-Robots-Tag', 'noindex, nofollow')
-            ->header('X-Defaced-By', 'Veyora Security');
+        abort(500, $error);
     }
 }
 EOF
-
-    # Set permissions
-    chown www-data:www-data "$PTERO_DIR/app/Http/Controllers/Api/Application/ApiController.php"
-    chmod 644 "$PTERO_DIR/app/Http/Controllers/Api/Application/ApiController.php"
     
+    log "Middleware created"
+    
+    # ===== 2. REGISTER MIDDLEWARE IN KERNEL =====
+    process "Registering middleware in Kernel.php..."
+    
+    if ! grep -q "ptla.protect" "$PTERO_DIR/app/Http/Kernel.php"; then
+        sed -i "/'throttle' => .*/a \\
+        'ptla.protect' => \\\App\\\Http\\\Middleware\\\PTLA\\\ProtectPTLA::class," "$PTERO_DIR/app/Http/Kernel.php"
+        log "Middleware registered in Kernel.php"
+    else
+        warn "Middleware already registered"
+    fi
+    
+    # ===== 3. PROTECT ROUTES =====
+    process "Protecting Application API routes..."
+    
+    if [ -f "$PTERO_DIR/routes/api-application.php" ]; then
+        # Backup dulu
+        cp "$PTERO_DIR/routes/api-application.php" "$BACKUP_DIR/api-application.php"
+        
+        # Check if already protected
+        if grep -q "ptla.protect" "$PTERO_DIR/routes/api-application.php"; then
+            warn "Routes already protected"
+        else
+            # Add middleware to the application api group
+            sed -i "s/'middleware' => \['api.application'\]/'middleware' => ['api.application', 'ptla.protect']/g" "$PTERO_DIR/routes/api-application.php"
+            log "Application API routes protected"
+        fi
+    else
+        warn "api-application.php not found"
+    fi
+    
+    # ===== 4. SET PERMISSIONS =====
+    process "Setting permissions..."
+    chown -R www-data:www-data "$PTERO_DIR/app/Http/Middleware/PTLA"
+    chmod -R 755 "$PTERO_DIR/app/Http/Middleware/PTLA"
+    
+    # ===== 5. CLEAR CACHE =====
     clear_cache
     
     echo
     echo "============================================================="
-    echo -e "${GREEN}✅ DEFACE APPLICATION API BERJAYI DIPASANG!${NC}"
+    echo -e "${GREEN}✅ PROTECT APPLICATION API BERJAYI DIPASANG!${NC}"
     echo "============================================================="
     echo -e "${YELLOW}HASILNYA:${NC}"
-    echo -e "${GREEN}✓ User ID 1: Buka /admin/api → Normal (macam biasa)${NC}"
-    echo -e "${RED}✗ User ID 2+: Buka /admin/api → Nampak page DEFACE keren${NC}"
+    echo -e "${GREEN}✓ User ID 1: Buka /admin/api → NORMAL${NC}"
+    echo -e "${RED}✗ User ID 2+: Buka /admin/api → ERROR 'Target Class'${NC}"
     echo
-    echo -e "${CYAN}Deface page termasuk:${NC}"
-    echo "  • Error message macam dalam gambar"
-    echo "  • Stack trace palsu"
-    echo "  • Warning message"
-    echo "  • Animasi glitch"
-    echo "  • Status 403 Forbidden"
+    echo -e "${BLUE}Nota: PTLC (Client API) tetap NORMAL untuk semua user${NC}"
     echo "============================================================="
 }
 
-# ============= UNINSTALL DEFACE APPLICATION API =============
-uninstall_deface_api() {
-    header "UNINSTALL DEFACE APPLICATION API"
+# ============= UNINSTALL PROTECT APPLICATION API =============
+uninstall_protect_ptla() {
+    header "🔓 UNINSTALL PROTECT APPLICATION API"
     
     check_pterodactyl
     
-    # Restore from backup
-    if [ -f "$BACKUP_DIR/ApiController.php" ]; then
-        cp "$BACKUP_DIR/ApiController.php" "$PTERO_DIR/app/Http/Controllers/Api/Application/ApiController.php"
-        log "Restored ApiController.php from backup"
-    else
-        # Download fresh copy from GitHub
-        warn "No backup found. Downloading fresh copy from Pterodactyl repo..."
-        curl -s -o "$PTERO_DIR/app/Http/Controllers/Api/Application/ApiController.php" \
-            "https://raw.githubusercontent.com/pterodactyl/panel/develop/app/Http/Controllers/Api/Application/ApiController.php"
-        log "Downloaded fresh ApiController.php"
+    warn "Ini akan unprotect Application API (PTLA) dan pulangkan ke normal"
+    read -p "Teruskan? (y/N): " confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        log "Dibatalkan"
+        return
     fi
     
+    # ===== 1. RESTORE ROUTES =====
+    process "Restoring Application API routes..."
+    
+    if [ -f "$BACKUP_DIR/api-application.php" ]; then
+        cp "$BACKUP_DIR/api-application.php" "$PTERO_DIR/routes/api-application.php"
+        log "Routes restored from backup"
+    else
+        # Remove middleware from routes
+        sed -i "s/, 'ptla.protect'//g" "$PTERO_DIR/routes/api-application.php"
+        sed -i "s/'ptla.protect', //g" "$PTERO_DIR/routes/api-application.php"
+        log "Routes cleaned manually"
+    fi
+    
+    # ===== 2. REMOVE MIDDLEWARE FROM KERNEL =====
+    process "Removing middleware from Kernel.php..."
+    
+    if [ -f "$BACKUP_DIR/Kernel.php" ]; then
+        cp "$BACKUP_DIR/Kernel.php" "$PTERO_DIR/app/Http/Kernel.php"
+        log "Kernel.php restored from backup"
+    else
+        sed -i "/'ptla.protect'/d" "$PTERO_DIR/app/Http/Kernel.php"
+        log "Middleware removed from Kernel.php"
+    fi
+    
+    # ===== 3. REMOVE MIDDLEWARE FILES =====
+    process "Removing middleware files..."
+    
+    if [ -d "$PTERO_DIR/app/Http/Middleware/PTLA" ]; then
+        rm -rf "$PTERO_DIR/app/Http/Middleware/PTLA"
+        log "Middleware directory removed"
+    fi
+    
+    # ===== 4. CLEAR CACHE =====
     clear_cache
-    log "✅ Deface Application API telah diuninstall"
+    
+    echo
+    echo "============================================================="
+    echo -e "${GREEN}✅ PROTECT APPLICATION API TELAH DIUNINSTALL!${NC}"
+    echo "============================================================="
+    echo -e "${YELLOW}SEKARANG:${NC}"
+    echo -e "${GREEN}✓ Semua user boleh akses /admin/api${NC}"
+    echo "============================================================="
 }
 
 # ============= INSTALL HIDE MENU =============
@@ -807,61 +545,15 @@ uninstall_hide_menu() {
     if [ -f "$BACKUP_DIR/admin.blade.php" ]; then
         cp "$BACKUP_DIR/admin.blade.php" "$PTERO_DIR/resources/views/layouts/admin.blade.php"
         log "Restored admin.blade.php from backup"
-        log "Hide Menu has been uninstalled"
     else
-        warn "No backup found. Cannot uninstall automatically."
+        # Download fresh copy
+        curl -s -o "$PTERO_DIR/resources/views/layouts/admin.blade.php" \
+            "https://raw.githubusercontent.com/pterodactyl/panel/develop/resources/views/layouts/admin.blade.php"
+        log "Downloaded fresh admin.blade.php"
     fi
     
     clear_cache
     log "Hide Menu has been uninstalled"
-}
-
-# ============= RESTORE FROM BACKUP =============
-restore_from_backup() {
-    header "RESTORE FROM BACKUP"
-    
-    # Cari semua backup
-    BACKUPS=($(ls -d /root/pterodactyl-backup-* 2>/dev/null | sort -r))
-    
-    if [ ${#BACKUPS[@]} -eq 0 ]; then
-        warn "Tiada backup dijumpai di /root/"
-        return
-    fi
-    
-    echo "Senarai backup dijumpai:"
-    echo
-    for i in "${!BACKUPS[@]}"; do
-        echo "[$((i+1))] ${BACKUPS[$i]}"
-    done
-    echo
-    read -p "Pilih backup (1-${#BACKUPS[@]}) atau 0 untuk batal: " choice
-    
-    if [[ "$choice" == "0" ]]; then
-        return
-    fi
-    
-    if [[ "$choice" -gt 0 && "$choice" -le "${#BACKUPS[@]}" ]]; then
-        SELECTED="${BACKUPS[$((choice-1))]}"
-        
-        process "Restoring from $SELECTED..."
-        
-        # Restore admin.blade.php
-        if [ -f "$SELECTED/admin.blade.php" ]; then
-            cp "$SELECTED/admin.blade.php" "$PTERO_DIR/resources/views/layouts/admin.blade.php"
-            log "Restored admin.blade.php"
-        fi
-        
-        # Restore ApiController.php
-        if [ -f "$SELECTED/ApiController.php" ]; then
-            cp "$SELECTED/ApiController.php" "$PTERO_DIR/app/Http/Controllers/Api/Application/ApiController.php"
-            log "Restored ApiController.php"
-        fi
-        
-        clear_cache
-        log "✅ Restore selesai!"
-    else
-        warn "Pilihan tak valid"
-    fi
 }
 
 # ============= FIX ERROR 500 =============
@@ -871,30 +563,20 @@ fix_error_500() {
     check_pterodactyl
     
     warn "Proses ini akan cuba membetulkan panel yang error 500"
-    echo
-    
     read -p "Teruskan? (y/N): " confirm
     if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
         log "Dibatalkan"
         return
     fi
     
-    process "Membetulkan syntax error di routes/admin.php..."
+    process "Membetulkan syntax error..."
     
-    # Backup dulu file yang bermasalah
-    [ -f "$PTERO_DIR/routes/admin.php" ] && cp "$PTERO_DIR/routes/admin.php" "$PTERO_DIR/routes/admin.php.error.backup"
+    # Fix routes
+    [ -f "$PTERO_DIR/routes/admin.php" ] && sed -i 's/->middleware(\[.*\])//g' "$PTERO_DIR/routes/admin.php"
+    [ -f "$PTERO_DIR/routes/api-application.php" ] && sed -i 's/->middleware(\[.*\])//g' "$PTERO_DIR/routes/api-application.php"
     
-    # Buang semua middleware yang bermasalah
-    sed -i 's/->middleware(\[.*\])//g' "$PTERO_DIR/routes/admin.php"
-    sed -i "s/'custom.security'//g" "$PTERO_DIR/routes/admin.php"
-    sed -i 's/"custom.security"//g' "$PTERO_DIR/routes/admin.php"
-    sed -i 's/,,/,/g' "$PTERO_DIR/routes/admin.php"
-    
-    # Bersihkan Kernel.php
-    if [ -f "$PTERO_DIR/app/Http/Kernel.php" ]; then
-        cp "$PTERO_DIR/app/Http/Kernel.php" "$PTERO_DIR/app/Http/Kernel.php.error.backup"
-        sed -i "/'custom.security'/d" "$PTERO_DIR/app/Http/Kernel.php"
-    fi
+    # Fix Kernel
+    [ -f "$PTERO_DIR/app/Http/Kernel.php" ] && sed -i "/'custom.security'/d" "$PTERO_DIR/app/Http/Kernel.php"
     
     clear_cache
     
@@ -905,88 +587,81 @@ fix_error_500() {
     log "✅ Fix selesai! Cuba refresh panel."
 }
 
+# ============= RESTORE FROM BACKUP =============
+restore_from_backup() {
+    header "RESTORE FROM BACKUP"
+    
+    # Cari backup
+    BACKUPS=($(ls -d /root/pterodactyl-backup-* 2>/dev/null | sort -r))
+    
+    if [ ${#BACKUPS[@]} -eq 0 ]; then
+        warn "Tiada backup dijumpai"
+        return
+    fi
+    
+    echo "Senarai backup:"
+    for i in "${!BACKUPS[@]}"; do
+        echo "[$((i+1))] ${BACKUPS[$i]}"
+    done
+    echo
+    read -p "Pilih backup (1-${#BACKUPS[@]}): " choice
+    
+    if [[ "$choice" -gt 0 && "$choice" -le "${#BACKUPS[@]}" ]]; then
+        SELECTED="${BACKUPS[$((choice-1))]}"
+        
+        process "Restoring from $SELECTED..."
+        
+        # Restore all files
+        [ -f "$SELECTED/ApiController.php" ] && cp "$SELECTED/ApiController.php" "$PTERO_DIR/app/Http/Controllers/Api/Application/"
+        [ -f "$SELECTED/api-application.php" ] && cp "$SELECTED/api-application.php" "$PTERO_DIR/routes/"
+        [ -f "$SELECTED/Kernel.php" ] && cp "$SELECTED/Kernel.php" "$PTERO_DIR/app/Http/"
+        [ -f "$SELECTED/admin.blade.php" ] && cp "$SELECTED/admin.blade.php" "$PTERO_DIR/resources/views/layouts/"
+        
+        clear_cache
+        log "✅ Restore selesai!"
+    fi
+}
+
 # ============= SHOW MENU =============
 show_menu() {
     clear
-    echo "⠀⢀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⠆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣭⡆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣹⠄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⡁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⠄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣤⠤⢤⣀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣠⠴⠒⢋⣉⣀⣠⣄⣀⣈⡇"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣸⡆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣴⣾⣯⠴⠚⠉⠉⠀⠀⠀⠀⣤⠏⣿"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡿⡇⠁⠀⠀⠀⠀⡄⠀⠀⠀⠀⠀⠀⠀⠀⣠⣴⡿⠿⢛⠁⠁⣸⠀⠀⠀⠀⠀⣤⣾⠵⠚⠁"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠰⢦⡀⠀⣠⠀⡇⢧⠀⠀⢀⣠⡾⡇⠀⠀⠀⠀⠀⣠⣴⠿⠋⠁⠀⠀⠀⠀⠘⣿⠀⣀⡠⠞⠛⠁⠂⠁⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡈⣻⡦⣞⡿⣷⠸⣄⣡⢾⡿⠁⠀⠀⠀⣀⣴⠟⠋⠁⠀⠀⠀⠀⠐⠠⡤⣾⣙⣶⡶⠃⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣂⡷⠰⣔⣾⣖⣾⡷⢿⣐⣀⣀⣤⢾⣋⠁⠀⠀⠀⣀⢀⣀⣀⣀⣀⠀⢀⢿⠑⠃⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠠⡦⠴⠴⠤⠦⠤⠤⠤⠤⠤⠴⠶⢾⣽⣙⠒⢺⣿⣿⣿⣿⢾⠶⣧⡼⢏⠑⠚⠋⠉⠉⡉⡉⠉⠉⠹⠈⠁⠉⠀⠨⢾⡂⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠂⠀⠀⠀⠂⠐⠀⠀⠀⠈⣇⡿⢯⢻⣟⣇⣷⣞⡛⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣠⣆⠀⠀⠀⠀⢠⡷⡛⣛⣼⣿⠟⠙⣧⠅⡄⠀⠀⠀⠀⠀⠀⠰⡆⠀⠀⠀⠀⢠⣾⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣴⢶⠏⠉⠀⠀⠀⠀⠀⠿⢠⣴⡟⡗⡾⡒⠖⠉⠏⠁⠀⠀⠀⠀⣀⢀⣠⣧⣀⣀⠀⠀⠀⠚⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⢴⣿⠟⠁⠀⠀⠀⠀⠀⠀⠀⣠⣷⢿⠋⠁⣿⡏⠅⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠙⣿⢭⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡴⢏⡵⠛⠀⠀⠀⠀⠀⠀⠀⣀⣴⠞⠛⠀⠀⠀⠀⢿⠀⠂⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠂⢿⠘⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣼⠛⣲⡏⠁⠀⠀⠀⠀⠀⢀⣠⡾⠋⠉⠀⠀⠀⠀⠀⠀⢾⡅⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡴⠟⠀⢰⡯⠄⠀⠀⠀⠀⣠⢴⠟⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⣹⠆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡾⠁⠁⠀⠘⠧⠤⢤⣤⠶⠏⠙⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢾⡃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⣇⠂⢀⣀⣀⠤⠞⠋⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣼⠇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠉⠉⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠾⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢼⡆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢰⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠛⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-    echo "⠄⠠⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
     echo "============================================================="
-    echo "                     Panel Protect"
-    echo "               Created by Veyora (@vdnox)"
+    echo "              PTERODACTYL SECURITY INSTALLER"
+    echo "                    Created by Veyora"
     echo "============================================================="
     echo
     echo "Pilih option:"
-    echo "[1] Install Hide Menu (Sembunyi menu dari user biasa)"
-    echo "[2] Install Deface Application API (Error page untuk ID selain 1)"
-    echo "[3] Uninstall Hide Menu"
-    echo "[4] Uninstall Deface Application API"
-    echo "[5] 🔧 FIX ERROR 500 PANEL"
-    echo "[6] Restore from Backup"
-    echo "[7] Exit"
+    echo "[1] 🔒 PROTECT APPLICATION API (PTLA) - Target Class Error"
+    echo "[2] 🔓 UNINSTALL PROTECT APPLICATION API"
+    echo "[3] 🎨 INSTALL HIDE MENU"
+    echo "[4] 🗑️ UNINSTALL HIDE MENU"
+    echo "[5] 🔧 FIX ERROR 500"
+    echo "[6] 📦 RESTORE FROM BACKUP"
+    echo "[7] ❌ EXIT"
     echo
     read -p "Select [1-7]: " choice
     
     case $choice in
-        1) 
-            install_hide_menu
+        1)
+            install_protect_ptla
             echo
             read -p "Press Enter to return to menu..."
             show_menu
             ;;
         2)
-            install_deface_api
+            uninstall_protect_ptla
             echo
             read -p "Press Enter to return to menu..."
             show_menu
             ;;
         3)
-            uninstall_hide_menu
+            install_hide_menu
             echo
             read -p "Press Enter to return to menu..."
             show_menu
             ;;
         4)
-            uninstall_deface_api
+            uninstall_hide_menu
             echo
             read -p "Press Enter to return to menu..."
             show_menu
@@ -1014,11 +689,9 @@ show_menu() {
     esac
 }
 
-# ============= START SCRIPT =============
-# Check if running as root
+# ============= START =============
 if [[ $EUID -ne 0 ]]; then
-    error "Script ini mesti run sebagai root! Guna: sudo bash security.sh"
+    error "Script ini mesti run sebagai root! Guna: sudo bash $0"
 fi
 
-# Start menu
 show_menu
