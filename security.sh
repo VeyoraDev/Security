@@ -3,7 +3,7 @@
 # ============================================
 # Pterodactyl Security Installer
 # Author: Veyora (@vdnox)
-# Version: 1.0
+# Version: 2.0 - Fixed Anti Create APIKey
 # ============================================
 
 set -e
@@ -20,7 +20,7 @@ NC='\033[0m'
 # ============= VARIABLES =============
 PTERO_DIR="/var/www/pterodactyl"
 BACKUP_DIR="/root/pterodactyl-backup-$(date +%Y%m%d-%H%M%S)"
-VERSION="1.0"
+VERSION="2.0"
 
 # ============= PRINT FUNCTIONS =============
 log() { echo -e "${GREEN}✓${NC} $1"; }
@@ -69,7 +69,6 @@ backup_files() {
         cp "$PTERO_DIR/resources/views/layouts/admin.blade.php" "$BACKUP_DIR/"
     
     log "Backup created at $BACKUP_DIR"
-    info "To restore: cp -r $BACKUP_DIR/* $PTERO_DIR/"
 }
 
 # ============= CLEAR CACHE =============
@@ -83,19 +82,19 @@ clear_cache() {
     log "Cache cleared"
 }
 
-# ============= INSTALL ANTI CREATE APIKEY =============
+# ============= INSTALL ANTI CREATE APIKEY (FIXED VERSION) =============
 install_anti_apikey() {
     header "ANTI CREATE APIKEY - Pemasangan"
     
     check_pterodactyl
     backup_files
     
-    show_loading "Memasang Anti Create APIKey"
+    show_loading "Memasang Anti Create APIKey (Fixed)"
     
     # Create directory if not exists
     mkdir -p "$PTERO_DIR/app/Http/Controllers/Api/Client"
     
-    # Write the PHP code
+    # Write the PHP code - FIXED VERSION dengan proteksi penuh
     cat > "$PTERO_DIR/app/Http/Controllers/Api/Client/ApiKeyController.php" << 'EOF'
 <?php
 
@@ -112,18 +111,18 @@ use Pterodactyl\Http\Requests\Api\Client\Account\StoreApiKeyRequest;
 class ApiKeyController extends ClientApiController
 {
     /**
-     * 🧱 Protect — Anti Akses Ilegal
-     * Hanya Admin utama (ID 1) yang boleh mengatur, membuat, dan menghapus API Key.
+     * 🔒 PROTECTED: Hanya Admin ID 1 yang boleh akses API Key functions
      */
     private function protectAccess($user)
     {
-        if (!$user || $user->id !== 1) {
+        // Check if user exists and has ID 1
+        if (!$user || !isset($user->id) || $user->id !== 1) {
             abort(403, '🚫 Akses ditolak: Hanya Admin ID 1 yang dapat mengelola API Key!');
         }
     }
 
     /**
-     * 📜 Menampilkan semua API Key (hanya Admin ID 1)
+     * 📜 Menampilkan semua API Key - PROTECTED
      */
     public function index(ClientApiRequest $request): array
     {
@@ -136,12 +135,17 @@ class ApiKeyController extends ClientApiController
     }
 
     /**
-     * 🧩 Membuat API Key baru (hanya Admin ID 1)
+     * 🧩 Membuat API Key baru - PROTECTED
      */
     public function store(StoreApiKeyRequest $request): array
     {
         $user = $request->user();
         $this->protectAccess($user);
+
+        // Additional check untuk memastikan user masih ID 1
+        if ($user->id !== 1) {
+            abort(403, '🚫 Akses ditolak: Hanya Admin ID 1 yang dapat membuat API Key!');
+        }
 
         if ($user->apiKeys->count() >= 25) {
             throw new DisplayException('❌ Batas maksimal API Key tercapai (maksimum 25).');
@@ -164,12 +168,17 @@ class ApiKeyController extends ClientApiController
     }
 
     /**
-     * ❌ Menghapus API Key (hanya Admin ID 1)
+     * ❌ Menghapus API Key - PROTECTED
      */
     public function delete(ClientApiRequest $request, string $identifier): JsonResponse
     {
         $user = $request->user();
         $this->protectAccess($user);
+
+        // Additional check untuk memastikan user masih ID 1
+        if ($user->id !== 1) {
+            abort(403, '🚫 Akses ditolak: Hanya Admin ID 1 yang dapat menghapus API Key!');
+        }
 
         /** @var \Pterodactyl\Models\ApiKey $key */
         $key = $user->apiKeys()
@@ -188,14 +197,19 @@ class ApiKeyController extends ClientApiController
 }
 EOF
 
+    # Set permissions
+    chown -R www-data:www-data "$PTERO_DIR/app/Http/Controllers/Api/Client"
+    chmod 644 "$PTERO_DIR/app/Http/Controllers/Api/Client/ApiKeyController.php"
+    
     clear_cache
     
     echo
-    echo "=========================================="
+    echo "============================================================="
     echo -e "${GREEN}✅ ANTI CREATE APIKEY BERJAYI DIPASANG!${NC}"
-    echo "=========================================="
-    echo -e "${YELLOW}Nota:${NC} Hanya user dengan ID 1 boleh buat/delete API Key"
-    echo "=========================================="
+    echo "============================================================="
+    echo -e "${YELLOW}Nota:${NC} ✓ Hanya user dengan ID 1 boleh buat/delete API Key"
+    echo -e "      ✓ User lain akan dapat error 403"
+    echo "============================================================="
 }
 
 # ============= INSTALL HIDE MENU =============
@@ -452,12 +466,16 @@ install_hide_menu() {
 </html>
 EOF
 
+    # Set permissions
+    chown -R www-data:www-data "$PTERO_DIR/resources/views/layouts"
+    chmod 644 "$PTERO_DIR/resources/views/layouts/admin.blade.php"
+    
     clear_cache
     
     echo
-    echo "=========================================="
+    echo "============================================================="
     echo -e "${GREEN}✅ HIDE MENU BERJAYI DIPASANG!${NC}"
-    echo "=========================================="
+    echo "============================================================="
     echo -e "${YELLOW}Nota:${NC} Menu berikut hanya nampak untuk user ID 1:"
     echo "  • Settings"
     echo "  • Application API"
@@ -466,7 +484,7 @@ EOF
     echo "  • Nodes"
     echo "  • Mounts"
     echo "  • Nests"
-    echo "=========================================="
+    echo "============================================================="
 }
 
 # ============= UNINSTALL ANTI APIKEY =============
@@ -574,39 +592,8 @@ show_menu() {
     echo "Pilih option:"
     echo "[1] Install Anti Create APIKey"
     echo "[2] Install Hide Menu"
-    echo "[3] Exit"
+    echo "[3] Uninstall Anti Create APIKey"
+    echo "[4] Uninstall Hide Menu"
+    echo "[5] Exit"
     echo
-    read -p "Select [1-3]: " choice
-    
-    case $choice in
-        1) 
-            install_anti_apikey
-            echo
-            read -p "Press Enter to return to menu..."
-            show_menu
-            ;;
-        2)
-            install_hide_menu
-            echo
-            read -p "Press Enter to return to menu..."
-            show_menu
-            ;;
-        3)
-            exit 0
-            ;;
-        *)
-            warn "Pilihan tak valid! Sila pilih 1-3"
-            sleep 2
-            show_menu
-            ;;
-    esac
-}
-
-# ============= START SCRIPT =============
-# Check if running as root
-if [[ $EUID -ne 0 ]]; then
-    error "Script ini mesti run sebagai root! Guna: sudo bash security.sh"
-fi
-
-# Start menu
-show_menu
+    read -p "Select [1-5]: " choice
