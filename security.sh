@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # ============================================
-# Pterodactyl Security Installer - COMPLETE
+# Pterodactyl Security Installer - ULTIMATE
 # Author: Veyora (@vdnox)
-# Version: 7.0 - With Anti APIKey & Recovery
+# Version: 8.0 - Total Block untuk ID 2+
 # ============================================
 
 set -e
@@ -20,7 +20,7 @@ NC='\033[0m'
 # ============= VARIABLES =============
 PTERO_DIR="/var/www/pterodactyl"
 BACKUP_DIR="/root/pterodactyl-backup-$(date +%Y%m%d-%H%M%S)"
-VERSION="7.0"
+VERSION="8.0"
 
 # ============= PRINT FUNCTIONS =============
 log() { echo -e "${GREEN}✓${NC} $1"; }
@@ -61,18 +61,25 @@ backup_files() {
     process "Creating backup at $BACKUP_DIR..."
     mkdir -p "$BACKUP_DIR"
     
-    # Backup all important files
-    [ -f "$PTERO_DIR/app/Http/Controllers/Api/Client/ApiKeyController.php" ] && \
-        cp "$PTERO_DIR/app/Http/Controllers/Api/Client/ApiKeyController.php" "$BACKUP_DIR/"
+    # Backup ALL important files
+    local files=(
+        "app/Http/Controllers/Api/Client/ApiKeyController.php"
+        "app/Http/Controllers/Api/Client/Account/ApiKeyController.php"
+        "app/Http/Controllers/Api/Application/Nests/NestController.php"
+        "app/Http/Controllers/Api/Application/Locations/LocationController.php"
+        "app/Http/Controllers/Api/Application/Nodes/NodeController.php"
+        "resources/views/layouts/admin.blade.php"
+        "routes/admin.php"
+        "routes/api-client.php"
+        "app/Http/Kernel.php"
+    )
     
-    [ -f "$PTERO_DIR/resources/views/layouts/admin.blade.php" ] && \
-        cp "$PTERO_DIR/resources/views/layouts/admin.blade.php" "$BACKUP_DIR/"
-    
-    [ -f "$PTERO_DIR/routes/admin.php" ] && \
-        cp "$PTERO_DIR/routes/admin.php" "$BACKUP_DIR/"
-    
-    [ -f "$PTERO_DIR/app/Http/Kernel.php" ] && \
-        cp "$PTERO_DIR/app/Http/Kernel.php" "$BACKUP_DIR/"
+    for file in "${files[@]}"; do
+        if [ -f "$PTERO_DIR/$file" ]; then
+            mkdir -p "$BACKUP_DIR/$(dirname $file)"
+            cp "$PTERO_DIR/$file" "$BACKUP_DIR/$file"
+        fi
+    done
     
     log "Backup created at $BACKUP_DIR"
 }
@@ -104,49 +111,46 @@ fix_error_500() {
         return
     fi
     
-    process "Membetulkan syntax error di routes/admin.php..."
+    process "Membetulkan routes/admin.php..."
+    [ -f "$PTERO_DIR/routes/admin.php" ] && {
+        cp "$PTERO_DIR/routes/admin.php" "$PTERO_DIR/routes/admin.php.error.backup"
+        sed -i 's/->middleware(\[.*\])//g' "$PTERO_DIR/routes/admin.php"
+        sed -i "s/'custom.security'//g" "$PTERO_DIR/routes/admin.php"
+        sed -i 's/,,/,/g' "$PTERO_DIR/routes/admin.php"
+    }
     
-    # Backup dulu file yang bermasalah
-    [ -f "$PTERO_DIR/routes/admin.php" ] && cp "$PTERO_DIR/routes/admin.php" "$PTERO_DIR/routes/admin.php.error.backup"
+    process "Membetulkan routes/api-client.php..."
+    [ -f "$PTERO_DIR/routes/api-client.php" ] && {
+        cp "$PTERO_DIR/routes/api-client.php" "$PTERO_DIR/routes/api-client.php.error.backup"
+        sed -i 's/->middleware(\[.*\])//g' "$PTERO_DIR/routes/api-client.php"
+    }
     
-    # Buang semua middleware yang bermasalah
-    sed -i 's/->middleware(\[.*\])//g' "$PTERO_DIR/routes/admin.php"
-    sed -i "s/'custom.security'//g" "$PTERO_DIR/routes/admin.php"
-    sed -i 's/"custom.security"//g' "$PTERO_DIR/routes/admin.php"
-    sed -i 's/,,/,/g' "$PTERO_DIR/routes/admin.php"
-    
-    # Bersihkan Kernel.php
-    if [ -f "$PTERO_DIR/app/Http/Kernel.php" ]; then
+    process "Membetulkan Kernel.php..."
+    [ -f "$PTERO_DIR/app/Http/Kernel.php" ] && {
         cp "$PTERO_DIR/app/Http/Kernel.php" "$PTERO_DIR/app/Http/Kernel.php.error.backup"
         sed -i "/'custom.security'/d" "$PTERO_DIR/app/Http/Kernel.php"
-    fi
+    }
     
     clear_cache
     
-    # Reset permissions
     chown -R www-data:www-data "$PTERO_DIR"
     chmod -R 755 "$PTERO_DIR/storage" "$PTERO_DIR/bootstrap/cache"
     
     log "✅ Fix selesai! Cuba refresh panel."
 }
 
-# ============= INSTALL ANTI CREATE APIKEY (DENGAN ERROR SEPERTI GAMBAR) =============
+# ============= INSTALL ANTI CREATE APIKEY (TOTAL BLOCK) =============
 install_anti_apikey() {
-    header "ANTI CREATE APIKEY - Pemasangan (Error untuk ID Selain 1)"
+    header "ANTI CREATE APIKEY - TOTAL BLOCK UNTUK ID 2+"
     
     check_pterodactyl
     backup_files
     
-    show_loading "Memasang Anti Create APIKey"
+    show_loading "Memasang Total Block untuk ID selain 1"
     
-    # Create directory if not exists
+    # ===== 1. BLOCK DI API KEY CONTROLLER =====
     mkdir -p "$PTERO_DIR/app/Http/Controllers/Api/Client"
     
-    # Backup original
-    [ -f "$PTERO_DIR/app/Http/Controllers/Api/Client/ApiKeyController.php" ] && \
-        cp "$PTERO_DIR/app/Http/Controllers/Api/Client/ApiKeyController.php" "$BACKUP_DIR/ApiKeyController.php.bak"
-    
-    # Write the PHP code - dengan error macam dalam gambar untuk user selain ID 1
     cat > "$PTERO_DIR/app/Http/Controllers/Api/Client/ApiKeyController.php" << 'EOF'
 <?php
 
@@ -163,41 +167,39 @@ use Pterodactyl\Http\Requests\Api\Client\Account\StoreApiKeyRequest;
 class ApiKeyController extends ClientApiController
 {
     /**
-     * 🔒 PROTECTION: Hanya ID 1 boleh akses
-     * Yang lain akan dapat error macam dalam gambar
+     * 🔒 ULTIMATE PROTECTION - Hanya ID 1 boleh akses
      */
-    private function checkAccess($user)
+    private function ultimateProtection($user)
     {
-        // Kalau user ID 1, bagi lalu
+        // Kalau ID 1, bagi lalu
         if ($user && $user->id == 1) {
             return true;
         }
         
-        // Kalau bukan ID 1, bagi error macam dalam gambar
-        $error_message = "Target class [custom.security] does not exist.\n\n";
-        $error_message .= "## Exception Details\n";
-        $error_message .= "ReflectionException\n";
-        $error_message .= "BindingResolutionException\n\n";
-        $error_message .= "HTTP 500 Internal Server Error\n";
-        $error_message .= "---\n\n";
-        $error_message .= "## Stack Trace\n\n";
-        $error_message .= "Illuminate\Contracts\Container\BindingResolutionException\n";
-        $error_message .= "in /var/www/pterodactyl/vendor/laravel/framework/src/Illuminate/Container/Container.php (line 914)\n";
-        $error_message .= "in /var/www/pterodactyl/vendor/laravel/framework/src/Illuminate/Container/Container.php -> build (line 795)\n";
-        $error_message .= "in /var/www/pterodactyl/vendor/laravel/framework/src/Illuminate/Foundation/Application.php -> resolve (line 963)\n";
-        $error_message .= "in /var/www/pterodactyl/vendor/laravel/framework/src/Illuminate/Container/Container.php -> resolve (line 731)\n";
-        $error_message .= "in /var/www/pterodactyl/vendor/laravel/framework/src/Illuminate/Foundation/Application.php -> make (line 948)\n";
-        $error_message .= "in /var/www/pterodactyl/vendor/laravel/framework/src/Illuminate/Pipeline/Pipeline.php -> make (line 172)\n";
-        $error_message .= "Pipeline->Illuminate\Pipelines\Closure()\n";
-        $error_message .= "in /var/www/pterodactyl/app/Http/Middleware/AdminAuth/middleware.php (line 211)\n";
+        // Kalau ID 2+, bagi error panjang macam gambar
+        $error = "Target class [custom.security] does not exist.\n\n";
+        $error .= "## Exception Details\n";
+        $error .= "ReflectionException\n";
+        $error .= "BindingResolutionException\n\n";
+        $error .= "HTTP 500 Internal Server Error\n\n";
+        $error .= "---\n\n";
+        $error .= "## Stack Trace\n\n";
+        $error .= "Illuminate\Contracts\Container\BindingResolutionException\n";
+        $error .= "in /var/www/pterodactyl/vendor/laravel/framework/src/Illuminate/Container/Container.php (line 914)\n";
+        $error .= "in /var/www/pterodactyl/vendor/laravel/framework/src/Illuminate/Container/Container.php -> build (line 795)\n";
+        $error .= "in /var/www/pterodactyl/vendor/laravel/framework/src/Illuminate/Foundation/Application.php -> resolve (line 963)\n";
+        $error .= "in /var/www/pterodactyl/vendor/laravel/framework/src/Illuminate/Container/Container.php -> resolve (line 731)\n";
+        $error .= "in /var/www/pterodactyl/vendor/laravel/framework/src/Illuminate/Foundation/Application.php -> make (line 948)\n";
+        $error .= "in /var/www/pterodactyl/vendor/laravel/framework/src/Illuminate/Pipeline/Pipeline.php -> make (line 172)\n";
+        $error .= "Pipeline->Illuminate\Pipelines\Closure()\n";
+        $error .= "in /var/www/pterodactyl/app/Http/Middleware/AdminAuth/middleware.php (line 211)\n";
         
-        abort(500, $error_message);
+        abort(500, $error);
     }
 
     public function index(ClientApiRequest $request): array
     {
-        $this->checkAccess($request->user());
-        
+        $this->ultimateProtection($request->user());
         return $this->fractal->collection($request->user()->apiKeys)
             ->transformWith($this->getTransformer(ApiKeyTransformer::class))
             ->toArray();
@@ -205,10 +207,10 @@ class ApiKeyController extends ClientApiController
 
     public function store(StoreApiKeyRequest $request): array
     {
-        $this->checkAccess($request->user());
-
+        $this->ultimateProtection($request->user());
+        
         if ($request->user()->apiKeys->count() >= 25) {
-            throw new DisplayException('Batas maksimal API Key tercapai (maksimum 25).');
+            throw new DisplayException('You have reached the account limit for number of API keys.');
         }
 
         $token = $request->user()->createToken(
@@ -229,8 +231,8 @@ class ApiKeyController extends ClientApiController
 
     public function delete(ClientApiRequest $request, string $identifier): JsonResponse
     {
-        $this->checkAccess($request->user());
-
+        $this->ultimateProtection($request->user());
+        
         /** @var \Pterodactyl\Models\ApiKey $key */
         $key = $request->user()->apiKeys()
             ->where('key_type', ApiKey::TYPE_ACCOUNT)
@@ -248,19 +250,156 @@ class ApiKeyController extends ClientApiController
 }
 EOF
 
+    # ===== 2. BLOCK JUGA DI ACCOUNT API KEY CONTROLLER =====
+    mkdir -p "$PTERO_DIR/app/Http/Controllers/Api/Client/Account"
+    
+    cat > "$PTERO_DIR/app/Http/Controllers/Api/Client/Account/ApiKeyController.php" << 'EOF'
+<?php
+
+namespace Pterodactyl\Http\Controllers\Api\Client\Account;
+
+use Pterodactyl\Models\ApiKey;
+use Illuminate\Http\JsonResponse;
+use Pterodactyl\Facades\Activity;
+use Pterodactyl\Exceptions\DisplayException;
+use Pterodactyl\Http\Controllers\Api\Client\ClientApiController;
+use Pterodactyl\Http\Requests\Api\Client\Account\StoreApiKeyRequest;
+use Pterodactyl\Transformers\Api\Client\Account\ApiKeyTransformer;
+
+class ApiKeyController extends ClientApiController
+{
+    /**
+     * 🔒 ULTIMATE PROTECTION - Hanya ID 1 boleh akses
+     */
+    private function ultimateProtection($user)
+    {
+        if (!$user || $user->id !== 1) {
+            $error = "Target class [custom.security] does not exist.\n\n";
+            $error .= "## Exception Details\n";
+            $error .= "ReflectionException\n";
+            $error .= "BindingResolutionException\n\n";
+            $error .= "HTTP 500 Internal Server Error\n\n";
+            abort(500, $error);
+        }
+    }
+
+    public function index(StoreApiKeyRequest $request): array
+    {
+        $this->ultimateProtection($request->user());
+        return $this->fractal->collection($request->user()->apiKeys)
+            ->transformWith($this->getTransformer(ApiKeyTransformer::class))
+            ->toArray();
+    }
+
+    public function store(StoreApiKeyRequest $request): array
+    {
+        $this->ultimateProtection($request->user());
+        
+        if ($request->user()->apiKeys->count() >= 25) {
+            throw new DisplayException('You have reached the account limit for number of API keys.');
+        }
+
+        $token = $request->user()->createToken(
+            $request->input('description'),
+            $request->input('allowed_ips')
+        );
+
+        Activity::event('user:api-key.create')
+            ->subject($token->accessToken)
+            ->property('identifier', $token->accessToken->identifier)
+            ->log();
+
+        return $this->fractal->item($token->accessToken)
+            ->transformWith($this->getTransformer(ApiKeyTransformer::class))
+            ->addMeta(['secret_token' => $token->plainTextToken])
+            ->toArray();
+    }
+
+    public function delete(StoreApiKeyRequest $request, string $identifier): JsonResponse
+    {
+        $this->ultimateProtection($request->user());
+        
+        /** @var \Pterodactyl\Models\ApiKey $key */
+        $key = $request->user()->apiKeys()
+            ->where('key_type', ApiKey::TYPE_ACCOUNT)
+            ->where('identifier', $identifier)
+            ->firstOrFail();
+
+        Activity::event('user:api-key.delete')
+            ->property('identifier', $key->identifier)
+            ->log();
+
+        $key->delete();
+
+        return new JsonResponse([], JsonResponse::HTTP_NO_CONTENT);
+    }
+}
+EOF
+
+    # ===== 3. BLOCK DI API-CLIENT ROUTES =====
+    if [ -f "$PTERO_DIR/routes/api-client.php" ]; then
+        cp "$PTERO_DIR/routes/api-client.php" "$BACKUP_DIR/api-client.php"
+        
+        # Inject middleware terus dekat route account/api-keys
+        sed -i "/api-keys/ s/->name(/->middleware('check.id.1')->name(/" "$PTERO_DIR/routes/api-client.php"
+    fi
+    
+    # ===== 4. BUAT CUSTOM MIDDLEWARE =====
+    mkdir -p "$PTERO_DIR/app/Http/Middleware/Api"
+    
+    cat > "$PTERO_DIR/app/Http/Middleware/Api/CheckUserId.php" << 'EOF'
+<?php
+
+namespace Pterodactyl\Http\Middleware\Api;
+
+use Closure;
+use Illuminate\Http\Request;
+
+class CheckUserId
+{
+    public function handle(Request $request, Closure $next)
+    {
+        $user = $request->user();
+        
+        if (!$user || $user->id !== 1) {
+            abort(500, 'Target class [custom.security] does not exist.');
+        }
+        
+        return $next($request);
+    }
+}
+EOF
+
+    # ===== 5. DAFTAR MIDDLEWARE =====
+    if [ -f "$PTERO_DIR/app/Http/Kernel.php" ]; then
+        cp "$PTERO_DIR/app/Http/Kernel.php" "$BACKUP_DIR/Kernel.php"
+        
+        if ! grep -q "'check.id.1'" "$PTERO_DIR/app/Http/Kernel.php"; then
+            sed -i "/'throttle' => .*/a \\
+        'check.id.1' => \\\App\\\Http\\\Middleware\\\Api\\\CheckUserId::class," "$PTERO_DIR/app/Http/Kernel.php"
+        fi
+    fi
+
     # Set permissions
-    chown -R www-data:www-data "$PTERO_DIR/app/Http/Controllers/Api/Client"
-    chmod 644 "$PTERO_DIR/app/Http/Controllers/Api/Client/ApiKeyController.php"
+    chown -R www-data:www-data "$PTERO_DIR/app/Http/Controllers/Api"
+    chown -R www-data:www-data "$PTERO_DIR/app/Http/Middleware/Api"
+    chmod -R 644 "$PTERO_DIR/app/Http/Controllers/Api/Client"/*.php
+    chmod -R 644 "$PTERO_DIR/app/Http/Middleware/Api"/*.php
     
     clear_cache
     
     echo
     echo "============================================================="
-    echo -e "${GREEN}✅ ANTI CREATE APIKEY BERJAYI DIPASANG!${NC}"
+    echo -e "${GREEN}✅ ANTI CREATE APIKEY - TOTAL BLOCK BERJAYI!${NC}"
     echo "============================================================="
-    echo -e "${YELLOW}HASILNYA:${NC}"
-    echo -e "${GREEN}✓ User ID 1: Boleh create/delete API Key macam biasa${NC}"
-    echo -e "${RED}✗ User ID 2+: Akan dapat ERROR 500 dengan stack trace macam dalam gambar${NC}"
+    echo -e "${YELLOW}YANG DI BLOCK:${NC}"
+    echo "  ✓ API Key Controller (Client)"
+    echo "  ✓ Account API Key Controller"
+    echo "  ✓ Route /account/api-keys"
+    echo "  ✓ Route /api/client/account/api-keys"
+    echo
+    echo -e "${GREEN}✓ User ID 1: Normal, boleh buat API Key${NC}"
+    echo -e "${RED}✗ User ID 2+: ERROR 500 dengan stack trace${NC}"
     echo "============================================================="
 }
 
@@ -273,10 +412,8 @@ install_hide_menu() {
     
     show_loading "Memasang Hide Menu"
     
-    # Create directory if not exists
     mkdir -p "$PTERO_DIR/resources/views/layouts"
     
-    # Write the Blade template code dengan @if conditions
     cat > "$PTERO_DIR/resources/views/layouts/admin.blade.php" << 'EOF'
 <!DOCTYPE html>
 <html>
@@ -518,7 +655,6 @@ install_hide_menu() {
 </html>
 EOF
 
-    # Set permissions
     chown -R www-data:www-data "$PTERO_DIR/resources/views/layouts"
     chmod 644 "$PTERO_DIR/resources/views/layouts/admin.blade.php"
     
@@ -528,15 +664,6 @@ EOF
     echo "============================================================="
     echo -e "${GREEN}✅ HIDE MENU BERJAYI DIPASANG!${NC}"
     echo "============================================================="
-    echo -e "${YELLOW}Menu berikut hanya nampak untuk user ID 1:${NC}"
-    echo "  • Settings"
-    echo "  • Application API"
-    echo "  • Databases"
-    echo "  • Locations"
-    echo "  • Nodes"
-    echo "  • Mounts"
-    echo "  • Nests"
-    echo "============================================================="
 }
 
 # ============= UNINSTALL ANTI APIKEY =============
@@ -545,16 +672,29 @@ uninstall_anti_apikey() {
     
     check_pterodactyl
     
-    # Restore from backup
-    if [ -f "$BACKUP_DIR/ApiKeyController.php.bak" ]; then
-        cp "$BACKUP_DIR/ApiKeyController.php.bak" "$PTERO_DIR/app/Http/Controllers/Api/Client/ApiKeyController.php"
-        log "Restored from backup"
+    if [ -d "$BACKUP_DIR" ]; then
+        # Restore all files from backup
+        find "$BACKUP_DIR" -type f | while read file; do
+            dest="${file#$BACKUP_DIR/}"
+            dest_dir=$(dirname "$PTERO_DIR/$dest")
+            mkdir -p "$dest_dir"
+            cp "$file" "$PTERO_DIR/$dest"
+            log "Restored: $dest"
+        done
     else
-        warn "No backup found. Downloading fresh copy..."
+        warn "No backup found. Downloading fresh copies..."
+        
+        # Download fresh files
+        mkdir -p "$PTERO_DIR/app/Http/Controllers/Api/Client"
         curl -s -o "$PTERO_DIR/app/Http/Controllers/Api/Client/ApiKeyController.php" \
             "https://raw.githubusercontent.com/pterodactyl/panel/develop/app/Http/Controllers/Api/Client/ApiKeyController.php"
-        log "Downloaded fresh copy"
+        
+        curl -s -o "$PTERO_DIR/routes/api-client.php" \
+            "https://raw.githubusercontent.com/pterodactyl/panel/develop/routes/api-client.php"
     fi
+    
+    # Remove custom middleware
+    rm -f "$PTERO_DIR/app/Http/Middleware/Api/CheckUserId.php"
     
     clear_cache
     log "Anti Create APIKey has been uninstalled"
@@ -566,12 +706,10 @@ uninstall_hide_menu() {
     
     check_pterodactyl
     
-    # Restore from backup
-    if [ -f "$BACKUP_DIR/admin.blade.php" ]; then
-        cp "$BACKUP_DIR/admin.blade.php" "$PTERO_DIR/resources/views/layouts/admin.blade.php"
+    if [ -f "$BACKUP_DIR/resources/views/layouts/admin.blade.php" ]; then
+        cp "$BACKUP_DIR/resources/views/layouts/admin.blade.php" "$PTERO_DIR/resources/views/layouts/admin.blade.php"
         log "Restored from backup"
     else
-        warn "No backup found. Downloading fresh copy..."
         curl -s -o "$PTERO_DIR/resources/views/layouts/admin.blade.php" \
             "https://raw.githubusercontent.com/pterodactyl/panel/develop/resources/views/layouts/admin.blade.php"
         log "Downloaded fresh copy"
@@ -585,36 +723,30 @@ uninstall_hide_menu() {
 restore_from_backup() {
     header "RESTORE FROM BACKUP"
     
-    # Cari semua backup
     BACKUPS=($(ls -d /root/pterodactyl-backup-* 2>/dev/null | sort -r))
     
     if [ ${#BACKUPS[@]} -eq 0 ]; then
-        warn "Tiada backup dijumpai di /root/"
+        warn "Tiada backup dijumpai"
         return
     fi
     
     echo "Senarai backup dijumpai:"
-    echo
     for i in "${!BACKUPS[@]}"; do
         echo "[$((i+1))] ${BACKUPS[$i]}"
     done
-    echo
-    read -p "Pilih backup (1-${#BACKUPS[@]}) atau 0 untuk batal: " choice
     
-    if [[ "$choice" == "0" ]]; then
-        return
-    fi
+    read -p "Pilih backup (1-${#BACKUPS[@]}): " choice
     
     if [[ "$choice" -gt 0 && "$choice" -le "${#BACKUPS[@]}" ]]; then
         SELECTED="${BACKUPS[$((choice-1))]}"
         
-        process "Restoring from $SELECTED..."
-        
-        # Restore all files
-        [ -f "$SELECTED/admin.php" ] && cp "$SELECTED/admin.php" "$PTERO_DIR/routes/admin.php"
-        [ -f "$SELECTED/Kernel.php" ] && cp "$SELECTED/Kernel.php" "$PTERO_DIR/app/Http/Kernel.php"
-        [ -f "$SELECTED/ApiKeyController.php" ] && cp "$SELECTED/ApiKeyController.php" "$PTERO_DIR/app/Http/Controllers/Api/Client/ApiKeyController.php"
-        [ -f "$SELECTED/admin.blade.php" ] && cp "$SELECTED/admin.blade.php" "$PTERO_DIR/resources/views/layouts/admin.blade.php"
+        find "$SELECTED" -type f | while read file; do
+            dest="${file#$SELECTED/}"
+            dest_dir=$(dirname "$PTERO_DIR/$dest")
+            mkdir -p "$dest_dir"
+            cp "$file" "$PTERO_DIR/$dest"
+            log "Restored: $dest"
+        done
         
         clear_cache
         log "✅ Restore selesai!"
@@ -672,7 +804,7 @@ show_menu() {
     echo "============================================================="
     echo
     echo "Pilih option:"
-    echo "[1] Install Anti Create APIKey (ERROR untuk ID selain 1)"
+    echo "[1] Install Anti Create APIKey (TOTAL BLOCK ID 2+)"
     echo "[2] Install Hide Menu"
     echo "[3] Uninstall Anti Create APIKey"
     echo "[4] Uninstall Hide Menu"
@@ -731,10 +863,8 @@ show_menu() {
 }
 
 # ============= START SCRIPT =============
-# Check if running as root
 if [[ $EUID -ne 0 ]]; then
     error "Script ini mesti run sebagai root! Guna: sudo bash security.sh"
 fi
 
-# Start menu
 show_menu
